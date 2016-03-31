@@ -65,16 +65,17 @@ static const enum Tokens expressions[][5] = {
 };
 
 /* private prototypes */
+struct Token *match_token(const char *const string);
 int token_compare(const void *s1, const void *s2);
 int tokstrcmp(const char *a, const char *b); /* not in ANSI C */
 
 /** "Returns 1 if the token is one of the valid robot commands, otherwise it
- returns 0."
+ returns 0." By 'robot commands' I assume it's any token, or this would not be
+ useful in syntax-checking.
  <p>
  If it is not valid, guaranteed to set global_synax_error. */
 int isValidCommand(const char *const token) {
-	const struct Token *t = bsearch(token, tokens, tokens_size, sizeof(struct Token), &token_compare);
-	if(!t || t->type != PURE) {
+	if(!match_token(token)) {
 		snprintf(global_syntax_error, sizeof global_syntax_error,
 				 "\"%.8s%s\" is not a valid command", token,
 				 strlen(token) > 8 ? "..." : "");
@@ -88,13 +89,19 @@ int isValidCommand(const char *const token) {
  <p>
  If it is not valid, guaranteed to set global_synax_error.
  <p>
- Uhhh, don't do this! make it void and require . . . in fact . . . no. */
+ This is awkard. */
 int isValidExpression(const char *const expression) {
 	snprintf(global_syntax_error, sizeof global_syntax_error, "<%s>", "no");
 	return 0;
 }
 
 /* private */
+
+struct Token *match_token(const char *const token) {
+	/* fixme: strings and numbers */
+	struct Token *const t = bsearch(token, tokens, tokens_size, sizeof(struct Token), &token_compare);
+	return t;
+}
 
 int token_compare(const void *s1, const void *s2) {
 	const char *key = s1;
