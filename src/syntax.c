@@ -13,10 +13,12 @@
 #include <stdlib.h> /* bsearch */
 #include <stdio.h>  /* snprintf */
 #include <string.h>	/* strlen */
+#include <ctype.h>	/* is* */
 #include "syntax.h"
 
 /* would be really a fn, but we can't modify the prototypes; THIS IS A GLOBAL */
 char global_syntax_error[128] = "no error";
+extern const char quote;
 
 /* static data */
 
@@ -30,7 +32,7 @@ enum CommandType { PURE, SYNTAX, LITERAL };
 
 /* alphabetised and in caps -- there is only one predictate, NOT DETECTMARKER,
  so it's easier to mark as SYNTAX; in general, this would be more flexible as
- PREDICATE, but it's not allowed by the assigment specifications */
+ PREDICATE, but it's difficult by the assigment specifications */
 static const struct Token {
 	char *string;
 	int id;
@@ -55,6 +57,8 @@ static const struct Token {
 	{ "WHILE",		WHILE,		SYNTAX }
 };
 static const int tokens_size = sizeof tokens / sizeof(struct Token);
+static const struct Token *const tok_number = tokens + 0;
+static const struct Token *const tok_string = tokens + 1;
 
 /* valid syntax */
 static const enum Tokens expressions[][5] = {
@@ -65,7 +69,7 @@ static const enum Tokens expressions[][5] = {
 };
 
 /* private prototypes */
-struct Token *match_token(const char *const string);
+const struct Token *match_token(const char *const string);
 int token_compare(const void *s1, const void *s2);
 int tokstrcmp(const char *a, const char *b); /* not in ANSI C */
 
@@ -73,8 +77,10 @@ int tokstrcmp(const char *a, const char *b); /* not in ANSI C */
  returns 0." By 'robot commands' I assume it's any token, or this would not be
  useful in syntax-checking.
  <p>
- If it is not valid, guaranteed to set global_synax_error. */
+ If token is not valid and not null, it is guaranteed to set
+ global_synax_error. If it is null, it returns without setting anything. */
 int isValidCommand(const char *const token) {
+	if(!token) return 0;
 	if(!match_token(token)) {
 		snprintf(global_syntax_error, sizeof global_syntax_error,
 				 "\"%.8s%s\" is not a valid command", token,
@@ -97,10 +103,12 @@ int isValidExpression(const char *const expression) {
 
 /* private */
 
-struct Token *match_token(const char *const token) {
-	/* fixme: strings and numbers */
-	struct Token *const t = bsearch(token, tokens, tokens_size, sizeof(struct Token), &token_compare);
-	return t;
+const struct Token *match_token(const char *const token) {
+	/* strings and numbers; we've already vetted them in parse.c */
+	if(*token == quote)  return tok_string;
+	if(isnumber(*token)) return tok_number;
+	/* or else it's, maybe, a token */
+	return bsearch(token, tokens, tokens_size, sizeof(struct Token), &token_compare);
 }
 
 int token_compare(const void *s1, const void *s2) {

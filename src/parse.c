@@ -8,15 +8,20 @@
  @version	1; 2016-03
  @since		1; 2016-03 */
 
-#include <string.h>	/* strncpy strlen etc */
+#include <string.h>	/* strncpy strlen strpbrk etc */
+#include <ctype.h>	/* is* */
+#include <stdio.h>	/* snprintf */
 #include "parse.h"
 
 /* keeps track of the position; THIS IS A GLOBAL */
 unsigned global_parse_index;
+extern char global_syntax_error[128];
 
-/* constants */
-static const char *const delimiters = " ,\t\n\r"; /* fixme */
-static const char quote = '\"';
+/* constants; this means ",repeat 2,times turnon turnon end ,," will be accepted
+ as valid, but I think it should; 'end' and ',' play duplicate roles and I'm
+ making the desicion that makes the parsing simplest */
+static const char *const delimiters = " ,\t\n\r"; /* fixme: vt, etc? */
+       const char quote = '\"';
 
 /* static data */
 static const char *last_init;
@@ -25,6 +30,7 @@ static const int buffer_size = sizeof buffer / sizeof(char);
 
 /* private prototypes */
 char *next_token(void);
+int is_first_whitespace(const char *const str);
 
 /** "This will initialize the private parse.c buffer with the string passed in
  the parameter inputLine."
@@ -77,11 +83,47 @@ char *next_token(void) {
 
 	/* advance the pointer to the first non-delimeter word */
 	while(*buf_pos && strchr(delimiters, *buf_pos)) buf_pos++;
-	if(!*buf_pos) return 0;
 	tok_start = buf_pos;
+
+	/* check special cases */
+	if(!*buf_pos) { /* end-of-string */
+		return 0;
+	} else if(*buf_pos == quote) { /* double-quotes */
+		char quote_str[2];
+		buf_pos++;
+		/* seach for the closing quotes; fixme: escape \" */
+		quote_str[0] = quote;
+		quote_str[1] = '\0';
+		if(!(buf_pos = strpbrk(buf_pos, quote_str))) {
+			snprintf(global_syntax_error, sizeof global_syntax_error,
+				"unmatched quotes");
+			buf_pos = buffer + strlen(buffer);
+			return 0;
+		}
+		buf_pos++;
+		/* ending is not followed by a whitespace? */
+		if(!is_first_whitespace(buf_pos)) {
+			snprintf(global_syntax_error, sizeof global_syntax_error,
+				"closing quotes not followed by whitespace");
+			buf_pos = strpbrk(buf_pos, delimiters);
+			return 0;
+		}
+	} else if(isnumber(*buf_pos)) { /* numerical */
+		while(isnumber(*(++buf_pos)));
+		if(!is_first_whitespace(buf_pos)) {
+			snprintf(global_syntax_error, sizeof global_syntax_error,
+				"non-numeric value in number");
+			buf_pos = strpbrk(buf_pos, delimiters);
+			return 0;
+		}
+	}
 
 	/* search for the next delimeter */
 	if((buf_pos = strpbrk(buf_pos, delimiters))) *(buf_pos++) = '\0';
 
 	return tok_start;
+}
+
+int is_first_whitespace(const char *const str) {
+	return !*str || strchr(delimiters, *str) ? -1 : 0;
 }
