@@ -50,7 +50,6 @@ int main(int argc, char **argv) {
 	FILE *fp = 0;
 	enum Error { E_NO, E_SYNTAX, E_FILE, E_LINE } error = E_NO;
 	int line_no = 0;
-	int is_unclean;
 	char *fn = 0;
 
 	/* try */ do {
@@ -65,6 +64,7 @@ int main(int argc, char **argv) {
 		/* syntax check */
 		while(fgets(line, sizeof line, fp)) {
 			line_no++;
+			fprintf(stderr, "LINE %u: %s", line_no, line);
 			/* "Every command or expression terminates with a carriage return
 			 and line feed." -- too restrictive (Windows gah,) but test at least
 			 new lines of any kind; fixme: \n is different on different
@@ -72,16 +72,10 @@ int main(int argc, char **argv) {
 			buffer_len = strlen(line);
 			if(!buffer_len || !strchr(lf, line[buffer_len - 1])) { error = E_LINE; break; }
 
-			/* check for syntax (should be altogether) */
-			is_unclean = 0;
-			initBuffer(line);
-			while(hasNextToken()) {
-				if(!isValidCommand(nextToken())) { is_unclean = -1; break; }
-			}
-			if(!is_unclean && !isValidExpression(line)) is_unclean = -1;
+			/* check for syntax */
+			if(isValidExpression(line)) continue;
 
 			/* syntax error message */
-			if(!is_unclean) continue;
 			printf("%.16s%s:%u: %.*s***%s", fn, strlen(fn) > 16 ? "..." : "",
 				line_no, global_parse_index, line, line + global_parse_index);
 			printf("syntax error: %s.\n", global_syntax_error);

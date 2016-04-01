@@ -14,10 +14,12 @@
 #include <stdio.h>  /* snprintf */
 #include <string.h>	/* strlen */
 #include <ctype.h>	/* is* */
+#include "parse.h"
 #include "syntax.h"
 
 /* would be really a fn, but we can't modify the prototypes; THIS IS A GLOBAL */
 char global_syntax_error[128] = "no error";
+extern const char *const delimiters;
 extern const char quote;
 
 /* static data */
@@ -27,93 +29,147 @@ enum Tokens { NOT_TOKEN, TAKEASTEP, LEFT, RIGHT, PICKUP, DROP, TURNON, TURNOFF,
 	REPEAT, TIMES, END, WHILE, NOT, DETECTMARKER, DO, SAY,
 	NUMBER, STRING, COMMAND, COMMANDS };
 
-/* classifications of the above */
-enum CommandType { PURE, SYNTAX, LITERAL };
-
 /* alphabetised and in caps -- there is only one predictate, NOT DETECTMARKER,
  so it's easier to mark as SYNTAX; in general, this would be more flexible as
  PREDICATE, but it's difficult by the assigment specifications */
 static const struct Token {
 	char *string;
 	int id;
-	enum CommandType type;
+	char avatar;
+	char *name;
 } tokens[] = {
-	{ "",			NUMBER,		LITERAL },
-	{ "",			STRING,		LITERAL },
-	{"DETECTMARKER",DETECTMARKER,SYNTAX },
-	{ "DO",			DO,			SYNTAX },
-	{ "DROP",		DROP,		PURE },
-	{ "END",		END,		SYNTAX },
-	{ "LEFT",		LEFT,		PURE },
-	{ "NOT",		NOT,		SYNTAX },
-	{ "PICKUP",		PICKUP,		PURE },
-	{ "REPEAT",		REPEAT,		SYNTAX },
-	{ "RIGHT",		RIGHT,		PURE },
-	{ "SAY",		SAY,		SYNTAX }, /* really CONSUMER */
-	{ "TAKEASTEP",	TAKEASTEP,	PURE },
-	{ "TIMES",		TIMES,		SYNTAX },
-	{ "TURNOFF",	TURNOFF,	PURE },
-	{ "TURNON",		TURNON,		PURE },
-	{ "WHILE",		WHILE,		SYNTAX }
+	{ "",			NUMBER,		'#',	"number" },
+	{ "",			STRING,		'a',	"message" },
+	{ "",			COMMAND,	'$',	"command" },
+	{ "",			COMMANDS,	'%',	"commands-followed-by-END" },
+	{"DETECTMARKER",DETECTMARKER,'d',	"DETECTMARKER" },
+	{ "DO",			DO,			'D',	"DO" },
+	{ "DROP",		DROP,		'$',	"DROP" },
+	{ "END",		END,		'E',	"END" },
+	{ "LEFT",		LEFT,		'$',	"LEFT" },
+	{ "NOT",		NOT,		'!',	"NOT" },
+	{ "PICKUP",		PICKUP,		'$',	"PICKUP" },
+	{ "REPEAT",		REPEAT,		'R',	"REPEAT" },
+	{ "RIGHT",		RIGHT,		'$',	"RIGHT" },
+	{ "SAY",		SAY,		'S',	"SAY" },
+	{ "TAKEASTEP",	TAKEASTEP,	'$',	"TAKEASTEP" },
+	{ "TIMES",		TIMES,		'T',	"TIMES" },
+	{ "TURNOFF",	TURNOFF,	'$',	"TURNOFF" },
+	{ "TURNON",		TURNON,		'$',	"TURNON" },
+	{ "WHILE",		WHILE,		'W',	"WHILE" }
 };
 static const int tokens_size = sizeof tokens / sizeof(struct Token);
-static const struct Token *const tok_number = tokens + 0;
-static const struct Token *const tok_string = tokens + 1;
+static const struct Token *const tok_number   = tokens + 0;
+static const struct Token *const tok_string   = tokens + 1;
+static const struct Token *const tok_command  = tokens + 2;
+static const struct Token *const tok_commands = tokens + 3;
+static const struct Token *token_suggestion;
 
-/* valid syntax */
-static const enum Tokens expressions[][5] = {
-	{ REPEAT,	NUMBER,	TIMES,			COMMANDS,	0 },
-	{ WHILE,	NOT,	DETECTMARKER,	DO,			COMMANDS },
-	{ SAY,		STRING,	0,				0,			0 },
-	{ COMMAND,	0,		0,				0,			0 }
+/* for offering suggestions */
+static const struct Reverse {
+	char avatar;
+	char *string;
+} reverse[] = {
+	{ '!', "NOT" },
+	{ '#', "<number>" },
+	{ '$', "<command>" },
+	{ '%', "<commands-followed-by-END>" },
+	{ 'D', "DO" },
+	{ 'E', "END" },
+	{ 'R', "REPEAT" },
+	{ 'S', "SAY" },
+	{ 'T', "TIMES" },
+	{ 'W', "WHILE" },
+	{ 'a', "<message>" },
+	{ 'd', "DETECTMARKER" }
 };
 
+/* valid syntax expression -- work with strings as opposed to int[] because of
+ the library support; also, familiar */
+static const char *avatars[] = {
+	"$",	/* COMMAND */
+	"R#T%",	/* REPEAT NUMBER TIMES COMMANDS */
+	"Sa",	/* SAY STRING */
+	"W!dD%"	/* WHILE NOT DETECTMARKER DO COMMANDS */
+};
+static const int avatars_size = sizeof avatars / sizeof(char *);
+static const char *avatar_suggestion;
+
 /* private prototypes */
-const struct Token *match_token(const char *const string);
-int token_compare(const void *s1, const void *s2);
-int tokstrcmp(const char *a, const char *b); /* not in ANSI C */
+static const struct Token *match_token(const char *const string);
+static int token_compare(const void *a, const void *b);
+static int tokstrcmp(const char *a, const char *b);
+static int match_expression(const char *const expression);
+static int expression_compare(const void *a, const void *b);
 
 /** "Returns 1 if the token is one of the valid robot commands, otherwise it
- returns 0." By 'robot commands' I assume it's any token, or this would not be
- useful in syntax-checking.
+ returns 0."
  <p>
- If token is not valid and not null, it is guaranteed to set
- global_synax_error. If it is null, it returns without setting anything. */
+ It may or may not set global_synax_error, depending on wheather it's a valid
+ token; expressions are also valid syntax, but are not commands. */
 int isValidCommand(const char *const token) {
-	if(!token) return 0;
-	if(!match_token(token)) {
-		snprintf(global_syntax_error, sizeof global_syntax_error,
-				 "\"%.8s%s\" is not a valid command", token,
-				 strlen(token) > 8 ? "..." : "");
-		return 0;
-	}
-	return 1;
+	const struct Token *t;
+	return (t = match_token(token)) && (t->avatar == '$') ? 1 : 0;
 }
 
 /** "Returns 1 if the expression agrees with one of the legal robot expressions,
- otherwise it returns 0."
+ otherwise it returns 0." This will check a line (the expression) vs one
+ 'expression.' It's much easier, less code duplication, less sharing, to do it
+ here.
  <p>
- If it is not valid, guaranteed to set global_synax_error.
+ If it is not valid and expression is not null, guaranteed to set
+ global_synax_error.
  <p>
- This is awkard. */
+ It uses parse.c to tokenise, so it will destroy any temp data that you have. */
 int isValidExpression(const char *const expression) {
-	snprintf(global_syntax_error, sizeof global_syntax_error, "<%s>", "no");
-	return 0;
+	const struct Token *token;
+	char avatar[512] = "", *a = avatar;
+
+	/* check the arguments */
+	if(!expression) return 0;
+
+	/* parse expression into Tokens and put them into the avatar (expression
+	 buffer or whatever) */
+	initBuffer(expression);
+	while(hasNextToken()) {
+		if(!(token = match_token(nextToken()))) return 0;
+		snprintf(avatar, sizeof avatar, "%s%c", avatar, token->avatar);
+		if(strlen(avatar) >= sizeof avatar - 1) {
+			snprintf(global_syntax_error, sizeof global_syntax_error,
+					 "line too long with %u tokens", (int)sizeof avatar - 1);
+			return 0;
+		}
+	}
+	printf("avatar before grouping <%s>\n", avatar);
+
+	/* group tokens together */
+	/*while((a = strrchr(avatar, 'E'))) {*/
+
+	return match_expression(avatar) ? 1 : 0;
 }
 
 /* private */
 
-const struct Token *match_token(const char *const token) {
+/** sets global_syntax_error on syntax error */
+static const struct Token *match_token(const char *const token) {
+	struct Token *t;
+
 	/* strings and numbers; we've already vetted them in parse.c */
+	if(!token)           return 0;
 	if(*token == quote)  return tok_string;
 	if(isnumber(*token)) return tok_number;
 	/* or else it's, maybe, a token */
-	return bsearch(token, tokens, tokens_size, sizeof(struct Token), &token_compare);
+	if(!(t = bsearch(token, tokens, tokens_size, sizeof(struct Token), &token_compare))) {
+		snprintf(global_syntax_error, sizeof global_syntax_error,
+			"\"%.8s%s\" is not a valid command", token,
+			strlen(token) > 8 ? "..." : "");
+	}
+	return t;
 }
 
-int token_compare(const void *s1, const void *s2) {
-	const char *key = s1;
-	const struct Token *elem = s2;
+static int token_compare(const void *a, const void *b) {
+	const char *key = a;
+	const struct Token *elem = b;
 	return tokstrcmp(key, elem->string);
 }
 
@@ -145,7 +201,28 @@ static char upper[] = {
 	-0x10,-0x0f,-0x0e,-0x0d,-0x0c,-0x0b,-0x0a,-0x09,
 	-0x08,-0x07,-0x06,-0x05,-0x04,-0x03,-0x02,-0x01
 };
-int tokstrcmp(const char *a, const char *b) {
+static int tokstrcmp(const char *a, const char *b) {
 	for( ; upper[(unsigned char)*a] == *b; a++, b++) if(*a == '\0') return 0;
 	return upper[(unsigned char)*a] - *b;
+}
+
+static int match_expression(const char *const expression) {
+	avatar_suggestion = avatars[0];
+	if(!bsearch(expression, avatars, avatars_size, sizeof(char *), &expression_compare)) {
+		snprintf(global_syntax_error, sizeof global_syntax_error,
+				 "\"%.8s%s\" is not a valid expression; did you mean <%s>?",
+				 expression, strlen(expression) > 8 ? "..." : "",
+				 avatar_suggestion);
+		return 0;
+	}
+	return -1;
+}
+
+static int expression_compare(const void *a, const void *b) {
+	const char *key = a;
+	const char *const*elem_ptr = b;
+	const char *const elem = *elem_ptr;
+	const int ret = strcmp(key, elem);
+	/*if(ret < 0)*/ avatar_suggestion = elem;
+	return ret;
 }

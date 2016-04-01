@@ -20,8 +20,8 @@ extern char global_syntax_error[128];
 /* constants; this means ",repeat 2,times turnon turnon end ,," will be accepted
  as valid, but I think it should; 'end' and ',' play duplicate roles and I'm
  making the desicion that makes the parsing simplest */
-static const char *const delimiters = " ,\t\n\r"; /* fixme: vt, etc? */
-       const char quote = '\"';
+const char *const delimiters = " ,\t\n\r"; /* fixme: vt, etc? */
+const char quote = '\"';
 
 /* static data */
 static const char *last_init;
@@ -29,8 +29,8 @@ static char buffer[1024], *buf_pos = buffer, *upcoming_token;
 static const int buffer_size = sizeof buffer / sizeof(char);
 
 /* private prototypes */
-char *next_token(void);
-int is_first_whitespace(const char *const str);
+static char *next_token(void);
+static int is_first_whitespace(const char *const str);
 
 /** "This will initialize the private parse.c buffer with the string passed in
  the parameter inputLine."
@@ -78,7 +78,7 @@ void vybrewind(void) {
 
 /* private */
 
-char *next_token(void) {
+static char *next_token(void) {
 	char *tok_start;
 
 	/* advance the pointer to the first non-delimeter word */
@@ -124,6 +124,6 @@ char *next_token(void) {
 	return tok_start;
 }
 
-int is_first_whitespace(const char *const str) {
+static int is_first_whitespace(const char *const str) {
 	return !*str || strchr(delimiters, *str) ? -1 : 0;
 }
