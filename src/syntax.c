@@ -125,7 +125,7 @@ int isValidCommand(const char *const token) {
  It uses parse.c to tokenise, so it will destroy any temp data that you have. */
 int isValidExpression(const char *const expression) {
 	const struct Token *token;
-	char avatar[512] = "", *a = avatar;
+	char avatar[5] = "", *a = avatar;
 
 	/* check the arguments */
 	if(!expression) return 0;
@@ -135,10 +135,9 @@ int isValidExpression(const char *const expression) {
 	initBuffer(expression);
 	while(hasNextToken()) {
 		if(!(token = match_token(nextToken()))) return 0;
-		snprintf(avatar, sizeof avatar, "%s%c", avatar, token->avatar);
-		if(strlen(avatar) >= sizeof avatar - 1) {
+		if(snprintf(avatar, sizeof avatar, "%s%c", avatar, token->avatar) >= (int)sizeof avatar) {
 			snprintf(global_syntax_error, sizeof global_syntax_error,
-					 "line too long with %u tokens", (int)sizeof avatar - 1);
+					 "line too long; %u tokens", (int)sizeof avatar);
 			return 0;
 		}
 	}

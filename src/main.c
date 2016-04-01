@@ -72,7 +72,9 @@ int main(int argc, char **argv) {
 			buffer_len = strlen(line);
 			if(!buffer_len || !strchr(lf, line[buffer_len - 1])) { error = E_LINE; break; }
 
-			/* check for syntax */
+			/* check for syntax; isValidExpression checks if the line is a
+			 valid expression, including all the commands and expressions;
+			 Expression (line) != expression (token) */
 			if(isValidExpression(line)) continue;
 
 			/* syntax error message */
