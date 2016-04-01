@@ -18,7 +18,7 @@
 #include "syntax.h"
 
 /* would be really a fn, but we can't modify the prototypes; THIS IS A GLOBAL */
-char global_syntax_error[128] = "no error";
+char global_syntax_error[256] = "no error";
 extern const char *const delimiters;
 extern const char quote;
 
@@ -36,34 +36,32 @@ static const struct Token {
 	char *string;
 	int id;
 	char avatar;
-	char *name;
 } tokens[] = {
-	{ "",			NUMBER,		'#',	"number" },
-	{ "",			STRING,		'a',	"message" },
-	{ "",			COMMAND,	'$',	"command" },
-	{ "",			COMMANDS,	'%',	"commands-followed-by-END" },
-	{"DETECTMARKER",DETECTMARKER,'d',	"DETECTMARKER" },
-	{ "DO",			DO,			'D',	"DO" },
-	{ "DROP",		DROP,		'$',	"DROP" },
-	{ "END",		END,		'E',	"END" },
-	{ "LEFT",		LEFT,		'$',	"LEFT" },
-	{ "NOT",		NOT,		'!',	"NOT" },
-	{ "PICKUP",		PICKUP,		'$',	"PICKUP" },
-	{ "REPEAT",		REPEAT,		'R',	"REPEAT" },
-	{ "RIGHT",		RIGHT,		'$',	"RIGHT" },
-	{ "SAY",		SAY,		'S',	"SAY" },
-	{ "TAKEASTEP",	TAKEASTEP,	'$',	"TAKEASTEP" },
-	{ "TIMES",		TIMES,		'T',	"TIMES" },
-	{ "TURNOFF",	TURNOFF,	'$',	"TURNOFF" },
-	{ "TURNON",		TURNON,		'$',	"TURNON" },
-	{ "WHILE",		WHILE,		'W',	"WHILE" }
+	{ "",			NUMBER,		'#' },
+	{ "",			STRING,		'a' },
+	{ "",			COMMAND,	'$' },
+	{ "",			COMMANDS,	'%' },
+	{"DETECTMARKER",DETECTMARKER,'d'},
+	{ "DO",			DO,			'D' },
+	{ "DROP",		DROP,		'$' },
+	{ "END",		END,		'E' },
+	{ "LEFT",		LEFT,		'$' },
+	{ "NOT",		NOT,		'!' },
+	{ "PICKUP",		PICKUP,		'$' },
+	{ "REPEAT",		REPEAT,		'R' },
+	{ "RIGHT",		RIGHT,		'$' },
+	{ "SAY",		SAY,		'S' },
+	{ "TAKEASTEP",	TAKEASTEP,	'$' },
+	{ "TIMES",		TIMES,		'T' },
+	{ "TURNOFF",	TURNOFF,	'$' },
+	{ "TURNON",		TURNON,		'$' },
+	{ "WHILE",		WHILE,		'W' }
 };
 static const int tokens_size = sizeof tokens / sizeof(struct Token);
 static const struct Token *const tok_number   = tokens + 0;
 static const struct Token *const tok_string   = tokens + 1;
 static const struct Token *const tok_command  = tokens + 2;
 static const struct Token *const tok_commands = tokens + 3;
-static const struct Token *token_suggestion;
 
 /* for offering suggestions */
 static const struct Reverse {
@@ -83,6 +81,7 @@ static const struct Reverse {
 	{ 'a', "<message>" },
 	{ 'd', "DETECTMARKER" }
 };
+static const int reverse_size = sizeof reverse / sizeof(struct Reverse);
 
 /* valid syntax expression -- work with strings as opposed to int[] because of
  the library support; also, familiar */
@@ -93,7 +92,6 @@ static const char *avatars[] = {
 	"W!dD%"	/* WHILE NOT DETECTMARKER DO COMMANDS */
 };
 static const int avatars_size = sizeof avatars / sizeof(char *);
-static const char *avatar_suggestion;
 
 /* private prototypes */
 static const struct Token *match_token(const char *const string);
@@ -101,6 +99,10 @@ static int token_compare(const void *a, const void *b);
 static int tokstrcmp(const char *a, const char *b);
 static int match_expression(const char *const expression);
 static int expression_compare(const void *a, const void *b);
+static const char *suggest_expression(const char *const close_to);
+static char *expand_expression(const char *const avatar);
+static char *reverse_token(const char avatar);
+static int reverse_compare(const void *a, const void *b);
 
 /** "Returns 1 if the token is one of the valid robot commands, otherwise it
  returns 0."
@@ -144,6 +146,7 @@ int isValidExpression(const char *const expression) {
 
 	/* group tokens together */
 	/*while((a = strrchr(avatar, 'E'))) {*/
+	/*********************** this ***********************/
 
 	return match_expression(avatar) ? 1 : 0;
 }
@@ -163,6 +166,7 @@ static const struct Token *match_token(const char *const token) {
 		snprintf(global_syntax_error, sizeof global_syntax_error,
 			"\"%.8s%s\" is not a valid command", token,
 			strlen(token) > 8 ? "..." : "");
+		/************************ fix: add ************************/
 	}
 	return t;
 }
@@ -206,13 +210,16 @@ static int tokstrcmp(const char *a, const char *b) {
 	return upper[(unsigned char)*a] - *b;
 }
 
+static char *suggest_token(const char *const close_to) {
+	return "no";
+}
+
 static int match_expression(const char *const expression) {
-	avatar_suggestion = avatars[0];
 	if(!bsearch(expression, avatars, avatars_size, sizeof(char *), &expression_compare)) {
 		snprintf(global_syntax_error, sizeof global_syntax_error,
-				 "\"%.8s%s\" is not a valid expression; did you mean <%s>?",
-				 expression, strlen(expression) > 8 ? "..." : "",
-				 avatar_suggestion);
+				 "\"%.64s%s\" is not a valid expression; nearest match \"%s\"",
+				 expand_expression(expression), strlen(expression) > 64 ? "..." : "",
+				 expand_expression(suggest_expression(expression)));
 		return 0;
 	}
 	return -1;
@@ -222,7 +229,48 @@ static int expression_compare(const void *a, const void *b) {
 	const char *key = a;
 	const char *const*elem_ptr = b;
 	const char *const elem = *elem_ptr;
-	const int ret = strcmp(key, elem);
-	/*if(ret < 0)*/ avatar_suggestion = elem;
-	return ret;
+	return strcmp(key, elem);
+}
+
+/* this crashes sometimes */
+static const char *suggest_expression(const char *const avatar) {
+	int lo = 0, hi = avatars_size - 1, n = strlen(avatar), i;
+
+	for(i = 0; i < n; i++) {
+		/* slightly inefficent */
+		while(hi > 0                && avatar[i] < avatars[hi][i]) hi--;
+		while(lo < avatars_size - 1 && avatar[i] > avatars[lo][i]) lo++;
+		/*printf(" - hi %d lo %d avatar[%i] = %c\n", hi, lo, i, avatar[i]);*/
+		if(lo == hi) break;
+	}
+
+	return avatars[lo];
+	
+	/****************** update global-pos ****************/
+}
+
+static char *expand_expression(const char *const avatar) {
+	static char expand[2][1024];
+	static int z;
+	int y;
+	const int n = strlen(avatar);
+	int i;
+
+	for(expand[z][0] = '\0', i = 0; i < n; i++) {
+		snprintf(expand[z], sizeof expand[z], "%s%s%s", expand[z], i ? " " : "", reverse_token(avatar[i]));
+	}
+	y = z;
+	z = (z + 1) & 1;
+	return expand[y];
+}
+
+static char *reverse_token(const char avatar) {
+	const struct Reverse *const r = bsearch(&avatar, reverse, reverse_size, sizeof(struct Reverse), &reverse_compare);
+	return r ? r->string : "null";
+}
+
+static int reverse_compare(const void *a, const void *b) {
+	const char key = *(const char *)a;
+	const struct Reverse *elem = b;
+	return key - elem->avatar;
 }
