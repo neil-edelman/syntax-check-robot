@@ -125,7 +125,8 @@ int isValidCommand(const char *const token) {
  It uses parse.c to tokenise, so it will destroy any temp data that you have. */
 int isValidExpression(const char *const expression) {
 	const struct Token *token;
-	char avatar[5] = "", *a = avatar;
+	int shift;
+	char avatar[512] = "", *a, *b;
 
 	/* check the arguments */
 	if(!expression) return 0;
@@ -143,9 +144,17 @@ int isValidExpression(const char *const expression) {
 	}
 	printf("avatar before grouping <%s>\n", avatar);
 
-	/* group tokens together */
-	/*while((a = strrchr(avatar, 'E'))) {*/
-	/*********************** this ***********************/
+	/* group tokens together; it could have been combined with the previous
+	 step for greater effecacity, but more confusion; this takes steps which
+	 are understandable */
+	while((b = strrchr(avatar, 'E'))) {
+		for(a = b - 1; a >= avatar && *a == '$'; a--); a++;
+		/* snprintf(avatar, sizeof avatar, "%.*s%%%s", a - avatar, avatar,
+		 b + 1); POSIX: "if copying takes place between objects that overlap
+		 . . . the results are undefined." well, it's faster just to . . . */
+		for(shift = b - a, *(a++) = '%'; (*a = *(a + shift)); a++);
+	}
+	printf("avatar after grouping <%s>\n", avatar);
 
 	return match_expression(avatar) ? 1 : 0;
 }
