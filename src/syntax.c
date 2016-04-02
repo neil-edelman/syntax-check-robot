@@ -111,11 +111,11 @@ static int tokstrcmp(const char *a, const char *b);
 /** "Returns 1 if the token is one of the valid robot commands, otherwise it
  returns 0."
  <p>
- It may or may not set synax.error, depending on wheather it's a valid
- token; expressions are also valid syntax, but are not commands. If the return
- value is zero, you can't be sure whether it set sytax and it a syntax error or
- it didn't but it's just not a command (but is a token.) (Read: not useful, but
- it works, {@see isValidExpression}.) */
+ It may or may not set synax.error, depending on wheather it's a valid token;
+ parts of expressions are also valid syntax, but are not commands; these will
+ not set syntax.error but will return false. If the return value is false, you
+ can't be sure whether it's a syntax error or it's a valid token, but it's just
+ not a command. The functionality is a subset of {@see isValidExpression}. */
 int isValidCommand(const char *const token) {
 	const struct Token *t;
 	return (t = match_token(token)) && (t->avatar == '$') ? 1 : 0;
@@ -124,15 +124,9 @@ int isValidCommand(const char *const token) {
 /** "Returns 1 if the expression agrees with one of the legal robot expressions,
  otherwise it returns 0."
  <p>
- I realise part-way in that you probably meant word expression not line
- expression. This is (non-obvious!) bad design because it returns a boolean
- value. If the syntax checker were in main.c, one could make it a global,
- and when it returns true, the global info is guaranteed to be set. However,
- all the syntax information which is static (potentally a lot) would have to
- become a const global along with the global so we could interpret. Syntax
- checker should be in syntax.c, and this is it.
- <p>
- If it returns false, it's guaranteed to set synax.error.
+ "Expression" is a line, not in individal token. It checks the individual
+ tokens, and then it checks the syntax of the line. If it returns false, it's
+ guaranteed to set synax.error.
  <p>
  It uses parse.c to tokenise, so it will destroy any temp data that you have. */
 int isValidExpression(const char *const expression) {
@@ -153,7 +147,8 @@ int isValidExpression(const char *const expression) {
 	a = avatar;
 	while(hasNextToken()) {
 		if(!(token = match_token(nextToken()))) return 0;
-		/* danger! if(snprintf(avatar, sizeof avatar, "%s%c", avatar, token->avatar) >= (int)sizeof avatar)*/
+		/* danger! (undefined behaviour)
+		 snprintf(avatar, sizeof avatar, "%s%c", avatar, token->avatar) */
 		if(a >= avatar + sizeof avatar / sizeof(char) - 1 /*null*/) {
 			snprintf(syntax.error, sizeof syntax.error,
 					 "line too long; %u tokens", (int)sizeof avatar);
