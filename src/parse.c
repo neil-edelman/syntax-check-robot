@@ -11,16 +11,14 @@
 #include <string.h>	/* strncpy strlen strpbrk etc */
 #include <ctype.h>	/* is* */
 #include <stdio.h>	/* snprintf */
-#include "parse.h"
+#include "syntax.h"	/* including syntax (error) */
+#include "parse.h"	/* including delimiters, quote */
 
-/* keeps track of the position; THIS IS A GLOBAL */
-unsigned global_parse_index;
-extern char global_syntax_error[128];
-
-/* constants; this means ",repeat 2,times turnon turnon end ,," will be accepted
- as valid, but I think it should; 'end' and ',' play duplicate roles and I'm
- making the desicion that makes the parsing simplest */
-const char *const delimiters = " ,\t\n\r"; /* fixme: vt, etc? */
+/* global definition; means ",repeat 2,times turnon turnon TURNON,,,end ,,"
+ will be accepted as valid, but I think it should; 'end' and ',' play duplicate
+ roles and I'm making the desicion that makes the parsing simplest; or else
+ you 'd have the tokens dictated by a state machine */
+const char *const delimiters = " ,\t\n\r"; /* fixme: esoteric, vt, etc? */
 const char quote = '\"';
 
 /* static data */
@@ -64,7 +62,7 @@ int hasNextToken(void) {
  the caller. If the buffer is empty then this function returns NULL." */
 char *nextToken(void) {
 	char *const token = upcoming_token;
-	global_parse_index = token - buffer;
+	syntax.index = token - buffer;
 	upcoming_token = next_token();
 	return token;
 }
@@ -95,7 +93,7 @@ static char *next_token(void) {
 		quote_str[0] = quote;
 		quote_str[1] = '\0';
 		if(!(buf_pos = strpbrk(buf_pos, quote_str))) {
-			snprintf(global_syntax_error, sizeof global_syntax_error,
+			snprintf(syntax.error, sizeof syntax.error,
 				"unmatched quotes");
 			buf_pos = buffer + strlen(buffer);
 			return 0;
@@ -103,7 +101,7 @@ static char *next_token(void) {
 		buf_pos++;
 		/* ending is not followed by a whitespace? */
 		if(!is_first_whitespace(buf_pos)) {
-			snprintf(global_syntax_error, sizeof global_syntax_error,
+			snprintf(syntax.error, sizeof syntax.error,
 				"closing quotes not followed by whitespace");
 			buf_pos = strpbrk(buf_pos, delimiters);
 			return 0;
@@ -111,7 +109,7 @@ static char *next_token(void) {
 	} else if(isnumber(*buf_pos)) { /* numerical */
 		while(isnumber(*(++buf_pos)));
 		if(!is_first_whitespace(buf_pos)) {
-			snprintf(global_syntax_error, sizeof global_syntax_error,
+			snprintf(syntax.error, sizeof syntax.error,
 				"non-numeric value in number");
 			buf_pos = strpbrk(buf_pos, delimiters);
 			return 0;

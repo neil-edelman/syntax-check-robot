@@ -14,24 +14,20 @@
 #include <stdio.h>  /* snprintf */
 #include <string.h>	/* strlen */
 #include <ctype.h>	/* is* */
-#include "parse.h"
-#include "syntax.h"
+#include "syntax.h"	/* including syntax (error) */
+#include "parse.h"	/* including delimiters, quote */
 
-/* would be really a fn, but we can't modify the prototypes; THIS IS A GLOBAL */
-char global_syntax_error[256] = "no error";
-extern const char *const delimiters;
-extern const char quote;
+/* should be f'n but we can't modify the prototypes; global definition */
+struct Error syntax = { "no error", -1 };
 
 /* static data */
 
-/* everything */
+/* every token */
 enum Tokens { NOT_TOKEN, TAKEASTEP, LEFT, RIGHT, PICKUP, DROP, TURNON, TURNOFF,
 	REPEAT, TIMES, END, WHILE, NOT, DETECTMARKER, DO, SAY,
 	NUMBER, STRING, COMMAND, COMMANDS };
 
-/* alphabetised and in caps -- there is only one predictate, NOT DETECTMARKER,
- so it's easier to mark as SYNTAX; in general, this would be more flexible as
- PREDICATE, but it's difficult by the assigment specifications */
+/* alphabetised and in caps */
 static const struct Token {
 	char *string;
 	int id;
@@ -86,6 +82,7 @@ static const int reverse_size = sizeof reverse / sizeof(struct Reverse);
 /* valid syntax expression -- work with strings as opposed to int[] because of
  the library support; also, familiar */
 static const char *avatars[] = {
+	"",		/* blank line shoud be ignored */
 	"$",	/* COMMAND */
 	"R#T%",	/* REPEAT NUMBER TIMES COMMANDS */
 	"Sa",	/* SAY STRING */
@@ -96,19 +93,21 @@ static const int avatars_size = sizeof avatars / sizeof(char *);
 /* private prototypes */
 static const struct Token *match_token(const char *const string);
 static int token_compare(const void *a, const void *b);
-static int tokstrcmp(const char *a, const char *b);
 static int match_expression(const char *const expression);
 static int expression_compare(const void *a, const void *b);
-static const char *suggest_expression(const char *const close_to);
 static char *expand_expression(const char *const avatar);
 static char *reverse_token(const char avatar);
 static int reverse_compare(const void *a, const void *b);
+static const char *suggest_token(const char *const);
+static const char *suggest_expression(const char *const);
+static int tokstrcmp(const char *a, const char *b);
 
 /** "Returns 1 if the token is one of the valid robot commands, otherwise it
  returns 0."
  <p>
- It may or may not set global_synax_error, depending on wheather it's a valid
- token; expressions are also valid syntax, but are not commands. */
+ It may or may not set synax.error, depending on wheather it's a valid
+ token; expressions are also valid syntax, but are not commands. You can't be
+ sure. */
 int isValidCommand(const char *const token) {
 	const struct Token *t;
 	return (t = match_token(token)) && (t->avatar == '$') ? 1 : 0;
@@ -119,8 +118,7 @@ int isValidCommand(const char *const token) {
  'expression.' It's much easier, less code duplication, less sharing, to do it
  here.
  <p>
- If it is not valid and expression is not null, guaranteed to set
- global_synax_error.
+ If it is not valid and expression, guaranteed to set synax_error.
  <p>
  It uses parse.c to tokenise, so it will destroy any temp data that you have. */
 int isValidExpression(const char *const expression) {
@@ -129,7 +127,11 @@ int isValidExpression(const char *const expression) {
 	char avatar[512] = "", *a, *b;
 
 	/* check the arguments */
-	if(!expression) return 0;
+	if(!expression) {
+		snprintf(syntax.error, sizeof syntax.error, "null expression");
+		syntax.index = -1;
+		return 0;
+	}
 
 	/* parse expression into Tokens and put them into the avatar (expression
 	 buffer or whatever) */
@@ -137,31 +139,28 @@ int isValidExpression(const char *const expression) {
 	while(hasNextToken()) {
 		if(!(token = match_token(nextToken()))) return 0;
 		if(snprintf(avatar, sizeof avatar, "%s%c", avatar, token->avatar) >= (int)sizeof avatar) {
-			snprintf(global_syntax_error, sizeof global_syntax_error,
+			snprintf(syntax.error, sizeof syntax.error,
 					 "line too long; %u tokens", (int)sizeof avatar);
+			/* index is set in parse */
 			return 0;
 		}
 	}
-	printf("avatar before grouping <%s>\n", avatar);
 
 	/* group tokens together; it could have been combined with the previous
 	 step for greater effecacity, but more confusion; this takes steps which
 	 are understandable */
 	while((b = strrchr(avatar, 'E'))) {
 		for(a = b - 1; a >= avatar && *a == '$'; a--); a++;
-		/* snprintf(avatar, sizeof avatar, "%.*s%%%s", a - avatar, avatar,
-		 b + 1); POSIX: "if copying takes place between objects that overlap
-		 . . . the results are undefined." well, it's faster just to . . . */
 		for(shift = b - a, *(a++) = '%'; (*a = *(a + shift)); a++);
 	}
-	printf("avatar after grouping <%s>\n", avatar);
 
 	return match_expression(avatar) ? 1 : 0;
 }
 
 /* private */
 
-/** sets global_syntax_error on syntax error */
+/** Converts a string into a const struct Token or returns null and sets
+ sytax.error. */
 static const struct Token *match_token(const char *const token) {
 	struct Token *t;
 
@@ -171,22 +170,106 @@ static const struct Token *match_token(const char *const token) {
 	if(isnumber(*token)) return tok_number;
 	/* or else it's, maybe, a token */
 	if(!(t = bsearch(token, tokens, tokens_size, sizeof(struct Token), &token_compare))) {
-		snprintf(global_syntax_error, sizeof global_syntax_error,
-			"\"%.8s%s\" is not a valid command", token,
-			strlen(token) > 8 ? "..." : "");
-		/************************ fix: add ************************/
+		snprintf(syntax.error, sizeof syntax.error,
+			"[%.16s%s] is not a valid command; did you mean, [%s]?", token,
+			strlen(token) > 16 ? "..." : "", suggest_token(token));
+		/* index is set in parse */
+		return 0;
 	}
 	return t;
 }
 
+/** This is used in {@see match_token}. */
 static int token_compare(const void *a, const void *b) {
 	const char *key = a;
 	const struct Token *elem = b;
 	return tokstrcmp(key, elem->string);
 }
 
-/* ANSI does NOT have strcasecmp, that's POSIX Issue 4, Version 2 and stricmp
- is Windows, C++, or an extension -- this is kind of overkill, but fast? */
+/** Takes an expression avatar and compares with the list of valid. */
+static int match_expression(const char *const avatar) {
+	if(!bsearch(avatar, avatars, avatars_size, sizeof(char *), &expression_compare)) {
+		snprintf(syntax.error, sizeof syntax.error,
+			"[%.64s%s] is not a valid expression; did you mean, [%s]?",
+			expand_expression(avatar), strlen(avatar) > 64 ? "..." : "",
+			expand_expression(suggest_expression(avatar)));
+		/* set the index to a negative because we don't have info on where */
+		syntax.index = -1;
+		return 0;
+	}
+	return -1;
+}
+
+/** {@see match_expression} bsearch. */
+static int expression_compare(const void *a, const void *b) {
+	const char *key = a;
+	const char *const*elem_ptr = b;
+	const char *const elem = *elem_ptr;
+	return strcmp(key, elem);
+}
+
+/** Takes "Sa#D" and expands it into "SAY <string> <number> DO" in a static
+ buffer. There are four of them, so you could call it a maximum of four times at
+ once without overruning. */
+static char *expand_expression(const char *const avatar) {
+	static char expand[4][1024];
+	static int z;
+	int y;
+	const int n = strlen(avatar);
+	int i;
+
+	for(expand[z][0] = '\0', i = 0; i < n; i++) {
+		snprintf(expand[z], sizeof expand[z], "%s%s%s", expand[z], i ? " " : "", reverse_token(avatar[i]));
+	}
+	y = z;
+	z = (z + 1) & 3;
+	return expand[y];
+}
+
+/** Takes a char and returns the meaning according to reverse; used in
+ {@see expand_expression}. */
+static char *reverse_token(const char avatar) {
+	const struct Reverse *const r = bsearch(&avatar, reverse, reverse_size, sizeof(struct Reverse), &reverse_compare);
+	return r ? r->string : "null";
+}
+
+/** {@see reverse_token} bsearch. */
+static int reverse_compare(const void *a, const void *b) {
+	const char key = *(const char *)a;
+	const struct Reverse *elem = b;
+	return key - elem->avatar;
+}
+
+/** O(n), but simple. Suggest, based on an arbitry token string, an actual
+ token string. */
+static const char *suggest_token(const char *const token) {
+	const int max = tokens_size - 1;
+	int lo = 0, hi = max, n = strlen(token), i;
+
+	for(i = 0; i < n && lo != hi; i++) {
+		while(hi > 0   && tokstrcmp(token, tokens[hi].string) < 0) hi--;
+		while(lo < max && tokstrcmp(token, tokens[lo].string) > 0) lo++;
+	}
+
+	return tokens[lo].string;
+}
+
+/** Suggest, based on an arbitry avatar expression, an actual avatar
+ expression. */
+static const char *suggest_expression(const char *const avatar) {
+	const int max = avatars_size - 1;
+	int lo = 0, hi = max, n = strlen(avatar), i;
+
+	for(i = 0; i < n && lo != hi; i++) {
+		while(hi > 0   && avatar[i] < avatars[hi][i]) hi--;
+		while(lo < max && avatar[i] > avatars[lo][i]) lo++;
+	}
+
+	return avatars[lo];
+}
+
+/* ANSI C89 does NOT have strcasecmp, stricmp, strcmpi, etc; that's POSIX, C++,
+ Windows, or an extension -- just make our own; used in {@see tokstrcmp}. */
 static char upper[] = {
 	0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  10, 11, 12, 13, 14, 15,
 	16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
@@ -213,72 +296,10 @@ static char upper[] = {
 	-0x10,-0x0f,-0x0e,-0x0d,-0x0c,-0x0b,-0x0a,-0x09,
 	-0x08,-0x07,-0x06,-0x05,-0x04,-0x03,-0x02,-0x01
 };
+
+/** This is used in {@see token_compare} and {@see suggest_token}. b is in
+ uppercase. */
 static int tokstrcmp(const char *a, const char *b) {
 	for( ; upper[(unsigned char)*a] == *b; a++, b++) if(*a == '\0') return 0;
 	return upper[(unsigned char)*a] - *b;
-}
-
-static char *suggest_token(const char *const close_to) {
-	return "no";
-}
-
-static int match_expression(const char *const expression) {
-	if(!bsearch(expression, avatars, avatars_size, sizeof(char *), &expression_compare)) {
-		snprintf(global_syntax_error, sizeof global_syntax_error,
-				 "\"%.64s%s\" is not a valid expression; nearest match \"%s\"",
-				 expand_expression(expression), strlen(expression) > 64 ? "..." : "",
-				 expand_expression(suggest_expression(expression)));
-		return 0;
-	}
-	return -1;
-}
-
-static int expression_compare(const void *a, const void *b) {
-	const char *key = a;
-	const char *const*elem_ptr = b;
-	const char *const elem = *elem_ptr;
-	return strcmp(key, elem);
-}
-
-/* this crashes sometimes */
-static const char *suggest_expression(const char *const avatar) {
-	int lo = 0, hi = avatars_size - 1, n = strlen(avatar), i;
-
-	for(i = 0; i < n; i++) {
-		/* slightly inefficent */
-		while(hi > 0                && avatar[i] < avatars[hi][i]) hi--;
-		while(lo < avatars_size - 1 && avatar[i] > avatars[lo][i]) lo++;
-		/*printf(" - hi %d lo %d avatar[%i] = %c\n", hi, lo, i, avatar[i]);*/
-		if(lo == hi) break;
-	}
-
-	return avatars[lo];
-	
-	/****************** update global-pos ****************/
-}
-
-static char *expand_expression(const char *const avatar) {
-	static char expand[2][1024];
-	static int z;
-	int y;
-	const int n = strlen(avatar);
-	int i;
-
-	for(expand[z][0] = '\0', i = 0; i < n; i++) {
-		snprintf(expand[z], sizeof expand[z], "%s%s%s", expand[z], i ? " " : "", reverse_token(avatar[i]));
-	}
-	y = z;
-	z = (z + 1) & 1;
-	return expand[y];
-}
-
-static char *reverse_token(const char avatar) {
-	const struct Reverse *const r = bsearch(&avatar, reverse, reverse_size, sizeof(struct Reverse), &reverse_compare);
-	return r ? r->string : "null";
-}
-
-static int reverse_compare(const void *a, const void *b) {
-	const char key = *(const char *)a;
-	const struct Reverse *elem = b;
-	return key - elem->avatar;
 }

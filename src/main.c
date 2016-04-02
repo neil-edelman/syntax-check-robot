@@ -20,8 +20,7 @@
 #include <stdio.h>  /* fprintf, fgets */
 #include <string.h>	/* strlen */
 #include <stdlib.h>	/* EXIT_* */
-#include "parse.h"
-#include "syntax.h"
+#include "syntax.h"	/* including syntax (error) */
 
 /* constants */
 static const char *programme   = "q1";
@@ -30,10 +29,7 @@ static const int versionMajor  = 1;
 static const int versionMinor  = 0;
 
 static const char *lf = "\n\r"; /* fixme: vertical tab, etc */
-
-/* FIXME: don't */
-extern char global_syntax_error[];
-extern unsigned global_parse_index;
+static const int debug = 0;
 
 /* private */
 static void usage(void);
@@ -64,7 +60,7 @@ int main(int argc, char **argv) {
 		/* syntax check */
 		while(fgets(line, sizeof line, fp)) {
 			line_no++;
-			fprintf(stderr, "LINE %u: %s", line_no, line);
+			if(debug) fprintf(stderr, "LINE %u: %s", line_no, line);
 			/* "Every command or expression terminates with a carriage return
 			 and line feed." -- too restrictive (Windows gah,) but test at least
 			 new lines of any kind; fixme: \n is different on different
@@ -78,9 +74,14 @@ int main(int argc, char **argv) {
 			if(isValidExpression(line)) continue;
 
 			/* syntax error message */
-			printf("%.16s%s:%u: %.*s***%s", fn, strlen(fn) > 16 ? "..." : "",
-				line_no, global_parse_index, line, line + global_parse_index);
-			printf("syntax error: %s.\n", global_syntax_error);
+			if(syntax.index < 0) {
+				printf("%.16s%s:%u: %s", fn, strlen(fn) > 16 ? "..." : "",
+					   line_no, line);
+			} else {
+				printf("%.16s%s:%u: %.*s***%s", fn, strlen(fn) > 16 ? "..." :
+					   "", line_no, syntax.index, line, line + syntax.index);
+			}
+			printf("syntax error: %s\n\n", syntax.error);
 		}
 		if(error) break;
 		if(ferror(fp)) { error = E_FILE; break; };
