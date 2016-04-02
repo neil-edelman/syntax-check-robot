@@ -86,7 +86,7 @@ static const int reverse_size = sizeof reverse / sizeof(struct Reverse);
 /* valid syntax expression translated to single-char by tokens[] -- work with
  strings as opposed to int[] because of the library support */
 static const char *avatars[] = {
-	"",		/* blank line shoud be ignored */
+	"",		/* blank line should be ignored */
 	"$",	/* COMMAND */
 	"R#T%",	/* REPEAT NUMBER TIMES COMMANDS */
 	"Sa",	/* SAY STRING */
