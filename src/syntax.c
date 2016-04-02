@@ -20,7 +20,7 @@
 /* should be f'n but we can't modify the prototypes; global definition */
 struct Error syntax = { "no error", -1 };
 
-/* static data */
+/* static const data */
 
 /* every token */
 enum Tokens { NOT_TOKEN, TAKEASTEP, LEFT, RIGHT, PICKUP, DROP, TURNON, TURNOFF,
@@ -59,7 +59,9 @@ static const struct Token *const tok_string   = tokens + 1;
 static const struct Token *const tok_command  = tokens + 2;
 static const struct Token *const tok_commands = tokens + 3;
 
-/* for offering suggestions */
+/* for offering suggestions; this should be tokens, but ordered by avatar;
+ the string does not (and cannot, it's not bijective) have to be tokens.string,
+ it's just used for printing */
 static const struct Reverse {
 	char avatar;
 	char *string;
@@ -79,8 +81,8 @@ static const struct Reverse {
 };
 static const int reverse_size = sizeof reverse / sizeof(struct Reverse);
 
-/* valid syntax expression -- work with strings as opposed to int[] because of
- the library support; also, familiar */
+/* valid syntax expression translated to single-char by tokens[] -- work with
+ strings as opposed to int[] because of the library support */
 static const char *avatars[] = {
 	"",		/* blank line shoud be ignored */
 	"$",	/* COMMAND */
@@ -102,23 +104,33 @@ static const char *suggest_token(const char *const);
 static const char *suggest_expression(const char *const);
 static int tokstrcmp(const char *a, const char *b);
 
+/* public */
+
 /** "Returns 1 if the token is one of the valid robot commands, otherwise it
  returns 0."
  <p>
  It may or may not set synax.error, depending on wheather it's a valid
- token; expressions are also valid syntax, but are not commands. You can't be
- sure. */
+ token; expressions are also valid syntax, but are not commands. If the return
+ value is zero, you can't be sure whether it set sytax and it a syntax error or
+ it didn't but it's just not a command (but is a token.) (Read: not useful, but
+ it works, {@see isValidExpression}.) */
 int isValidCommand(const char *const token) {
 	const struct Token *t;
 	return (t = match_token(token)) && (t->avatar == '$') ? 1 : 0;
 }
 
 /** "Returns 1 if the expression agrees with one of the legal robot expressions,
- otherwise it returns 0." This will check a line (the expression) vs one
- 'expression.' It's much easier, less code duplication, less sharing, to do it
- here.
+ otherwise it returns 0."
  <p>
- If it is not valid and expression, guaranteed to set synax_error.
+ I realise part-way in that you probably meant word expression not line
+ expression. This is (non-obvious!) bad design because it returns a boolean
+ value. If the syntax checker were in main.c, one could make it a global,
+ and when it returns true, the global info is guaranteed to be set. However,
+ all the syntax information which is static (potentally a lot) would have to
+ become a const global along with the global so we could interpret. Syntax
+ checker should be in syntax.c, and this is it.
+ <p>
+ If it returns false, it's guaranteed to set synax.error.
  <p>
  It uses parse.c to tokenise, so it will destroy any temp data that you have. */
 int isValidExpression(const char *const expression) {
@@ -136,19 +148,22 @@ int isValidExpression(const char *const expression) {
 	/* parse expression into Tokens and put them into the avatar (expression
 	 buffer or whatever) */
 	initBuffer(expression);
+	a = avatar;
 	while(hasNextToken()) {
 		if(!(token = match_token(nextToken()))) return 0;
-		if(snprintf(avatar, sizeof avatar, "%s%c", avatar, token->avatar) >= (int)sizeof avatar) {
+		/* danger! if(snprintf(avatar, sizeof avatar, "%s%c", avatar, token->avatar) >= (int)sizeof avatar)*/
+		if(a >= avatar + sizeof avatar / sizeof(char) - 1 /*null*/) {
 			snprintf(syntax.error, sizeof syntax.error,
 					 "line too long; %u tokens", (int)sizeof avatar);
-			/* index is set in parse */
+			/* index is set in parse.c */
 			return 0;
 		}
+		a[0] = token->avatar;
+		a[1] = '\0';
 	}
 
 	/* group tokens together; it could have been combined with the previous
-	 step for greater effecacity, but more confusion; this takes steps which
-	 are understandable */
+	 step for greater effecacity, but more confusion */
 	while((b = strrchr(avatar, 'E'))) {
 		for(a = b - 1; a >= avatar && *a == '$'; a--); a++;
 		for(shift = b - a, *(a++) = '%'; (*a = *(a + shift)); a++);

@@ -17,7 +17,7 @@
 /* global definition; means ",repeat 2,times turnon turnon TURNON,,,end ,,"
  will be accepted as valid, but I think it should; 'end' and ',' play duplicate
  roles and I'm making the desicion that makes the parsing simplest; or else
- you 'd have the tokens dictated by a state machine */
+ you'd have the tokens dictated by a state machine */
 const char *const delimiters = " ,\t\n\r"; /* fixme: esoteric, vt, etc? */
 const char quote = '\"';
 
@@ -29,6 +29,8 @@ static const int buffer_size = sizeof buffer / sizeof(char);
 /* private prototypes */
 static char *next_token(void);
 static int is_first_whitespace(const char *const str);
+
+/* public */
 
 /** "This will initialize the private parse.c buffer with the string passed in
  the parameter inputLine."
@@ -47,6 +49,8 @@ void initBuffer(const char *const inputLine) {
 	buffer[buffer_size - 1] = '\0';
 
 	upcoming_token = next_token();
+
+	syntax.index = -1;
 
 }
 

@@ -107,6 +107,8 @@ int main(int argc, char **argv) {
 	return EXIT_SUCCESS;
 }
 
+/* private */
+
 /** Prints command-line help. */
 static void usage(void) {
 	fprintf(stderr, "Usage: %s <filename>\n", programme);
