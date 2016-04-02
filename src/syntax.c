@@ -22,6 +22,8 @@ struct Error syntax = { "no error", -1 };
 
 /* static const data */
 
+static const int debug = 0;
+
 /* every token */
 enum Tokens { NOT_TOKEN, TAKEASTEP, LEFT, RIGHT, PICKUP, DROP, TURNON, TURNOFF,
 	REPEAT, TIMES, END, WHILE, NOT, DETECTMARKER, DO, SAY,
@@ -158,9 +160,10 @@ int isValidExpression(const char *const expression) {
 			/* index is set in parse.c */
 			return 0;
 		}
-		a[0] = token->avatar;
-		a[1] = '\0';
+		*(a++) = token->avatar;
+		*a     = '\0';
 	}
+	if(debug) fprintf(stderr, "isValidExp avatar before <%s>\n", avatar);
 
 	/* group tokens together; it could have been combined with the previous
 	 step for greater effecacity, but more confusion */
@@ -168,6 +171,7 @@ int isValidExpression(const char *const expression) {
 		for(a = b - 1; a >= avatar && *a == '$'; a--); a++;
 		for(shift = b - a, *(a++) = '%'; (*a = *(a + shift)); a++);
 	}
+	if(debug) fprintf(stderr, "isValidExp avatar grouping <%s>\n", avatar);
 
 	return match_expression(avatar) ? 1 : 0;
 }
