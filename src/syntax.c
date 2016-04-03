@@ -97,7 +97,7 @@ static const int avatars_size = sizeof avatars / sizeof(char *);
 /* private prototypes */
 static const struct Token *match_token(const char *const string);
 static int token_compare(const void *a, const void *b);
-static int match_expression(const char *const expression);
+static const char *match_expression(const char *const avatar);
 static int expression_compare(const void *a, const void *b);
 static char *expand_expression(const char *const avatar);
 static char *reverse_token(const char avatar);
@@ -200,9 +200,12 @@ static int token_compare(const void *a, const void *b) {
 	return tokstrcmp(key, elem->string);
 }
 
-/** Takes an expression avatar and compares with the list of valid. */
-static int match_expression(const char *const avatar) {
-	if(!bsearch(avatar, avatars, avatars_size, sizeof(char *), &expression_compare)) {
+/** Takes an expression avatar and compares with the list of valid; it returns
+ the avatars entry or null. */
+static const char *match_expression(const char *const avatar) {
+	const char *match;
+
+	if(!(match = bsearch(avatar, avatars, avatars_size, sizeof(char *), &expression_compare))) {
 		snprintf(syntax.error, sizeof syntax.error,
 			"[%.64s%s] is not a valid expression; did you mean, [%s]?",
 			expand_expression(avatar), strlen(avatar) > 64 ? "..." : "",
@@ -211,7 +214,7 @@ static int match_expression(const char *const avatar) {
 		syntax.index = -1;
 		return 0;
 	}
-	return -1;
+	return match;
 }
 
 /** {@see match_expression} bsearch. */
