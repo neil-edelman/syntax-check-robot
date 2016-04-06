@@ -15,7 +15,7 @@ H    := $(wildcard $(SDIR)/*.h)
 OBJS := $(patsubst $(SDIR)/%.c, $(BDIR)/%.o, $(SRCS))
 
 CC   := gcc # /usr/local/i386-mingw32-4.3.0/bin/i386-mingw32-gcc javac nxjc
-CF   := -Wall -Wextra -O3 -fasm -fomit-frame-pointer -ffast-math -funroll-loops -pedantic -ansi # turn on -g for debugging and change -Og
+CF   := -Wall -Wextra -O3 -fasm -fomit-frame-pointer -ffast-math -funroll-loops -pedantic -std=c99 #-ansi # turn on -g for debugging and change -Og
 OF   := # -framework OpenGL -framework GLUT
 
 # props Jakob Borg and Eldar Abusalimov
