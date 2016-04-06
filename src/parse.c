@@ -110,8 +110,8 @@ static char *next_token(void) {
 			buf_pos = strpbrk(buf_pos, delimiters);
 			return 0;
 		}
-	} else if(isnumber(*buf_pos)) { /* numerical */
-		while(isnumber(*(++buf_pos)));
+	} else if(isdigit(*buf_pos)) { /* numerical */
+		while(isdigit(*(++buf_pos)));
 		if(!is_first_whitespace(buf_pos)) {
 			snprintf(syntax.error, sizeof syntax.error,
 				"non-numeric value in number");

@@ -181,7 +181,7 @@ static const struct Token *match_token(const char *const token) {
 	/* strings and numbers; we've already vetted them in parse.c */
 	if(!token)           return 0;
 	if(*token == quote)  return tok_string;
-	if(isnumber(*token)) return tok_number;
+	if(isdigit(*token)) return tok_number;
 	/* or else it's, maybe, a token */
 	if(!(t = bsearch(token, tokens, tokens_size, sizeof(struct Token), &token_compare))) {
 		snprintf(syntax.error, sizeof syntax.error,
